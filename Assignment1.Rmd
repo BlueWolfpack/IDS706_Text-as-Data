@@ -1,0 +1,263 @@
+---
+title: "R Notebook"
+author: Laura Perkins
+NetID: LLP34
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code.
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*.
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+```{r}
+#load packages ---------
+library(readr)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(tidytext)
+library(ggplot2)
+library(forcats)
+library(tibble)
+library(scales)
+```
+
+## Part1
+
+```{r}
+#reading files into a dataframe for tidywork ------
+file_a <- "texts/A07594__Circle_of_Commerce.txt"
+file_b <- "texts/B14801__Free_Trade.txt"
+
+#Read raw txt into R
+text_a <- read_file(file_a)
+text_b <- read_file(file_b)
+
+#Combine into a tibble for tidytext workflow
+texts <- tibble(
+  doc_title = c("Text A", "Text B"),
+  text = c(text_a, text_b)
+)
+
+#print tibble table
+texts
+```
+
+The above is the code from my Week2/script.R file up to the creation of the texts tibble table
+
+```{r}
+#generates a tibble called words with one word(token) per row
+words <- texts %>%
+  unnest_tokens(word, text) 
+words
+```
+
+this generates the count of words per document
+
+```{r}
+wordsa <- nrow(filter(words, doc_title == "Text A"))
+wordsb <- nrow(filter(words, doc_title == "Text B"))
+
+wordsa
+wordsb
+```
+
+remove stopwords
+
+```{r}
+#first need to generate the list of all stopwords
+# Start with tidytext's built-in stopword list
+data("stop_words")
+
+# Add our own project-specific stopwords (you can, and will, expand this list later)
+custom_stopwords <- tibble(
+  word = c(
+    "vnto", "haue", "doo", "hath", "bee", "ye", "thee"
+  )
+)
+
+all_stopwords <- bind_rows(stop_words, custom_stopwords) %>%
+  distinct(word)
+
+#all_stopwords %>% slice(1:10) #not sure what this is for, but I just copied it over #I decided to comment it out
+
+#remove stopwords (remaining count is 22702 words)
+word_nostops <- words %>%
+  anti_join(all_stopwords, by = "word") 
+w_ns_a <- nrow(filter(word_nostops, doc_title == "Text A"))
+w_ns_b <- nrow(filter(word_nostops, doc_title == "Text B"))
+
+word_nostops
+w_ns_a
+w_ns_b
+```
+
+generates a tibble called corpus_diagnostics with one row per document (so 2 rows) that includes [see assignment pdf]
+
+```{r}
+corpus_diagnostics <- tibble( 
+  doc_title = c("Text A", "Text B"), 
+  total_tokens = c(wordsa, wordsb), 
+  tokens_after_stopwords = c(w_ns_a, w_ns_b), 
+  tokens_removed = c(wordsa - w_ns_a, wordsb - w_ns_b), 
+  percent_removed = c(100*(wordsa - w_ns_a)/wordsa, 100*(wordsb - w_ns_b)/wordsb) 
+  )
+corpus_diagnostics
+```
+
+### Interpretive questions
+
+Text A had 56.64 % of the tokens removed, while Text B had 59.82 % removal. While Text B had a higher removal rate, I would actually say that these are approximately the same as there is \< 4 % difference.
+
+While the difference between the two percentages is negligable, the actual precentages are quite high. This suggests to me that the text may be relatively easy to comprehend as there are many "filler words", potentially reducing the amount of jargon present and making it more accessible to a general audience.
+
+Note: My guess could be completely in the wrong direction, where a high amount of stop word removal actually suggests more jargon usage.
+
+## Part 2
+
+### A
+
+count frequency of each word in each document *before* stopword removal
+
+```{r}
+word_counts <- words %>%
+  count(doc_title, word, sort = TRUE)
+```
+
+identify 15 most frequent words using the same procedure as the week2 tutorial (plot the same 15 words for both documents)
+
+```{r}
+plot_n_words <- 15
+
+# Order the words by frequency
+word_comparison_tbl <- word_counts %>%
+  pivot_wider(
+    names_from = doc_title,
+    values_from = n,
+    values_fill = 0
+  ) %>%
+  mutate(max_n = pmax(`Text A`, `Text B`)) %>%
+  arrange(desc(max_n))
+
+# new table format to create ggplot
+word_plot_data <- word_comparison_tbl %>%
+  slice_head(n = plot_n_words) %>%
+  pivot_longer(
+    cols = c(`Text A`, `Text B`),
+    names_to = "doc_title",
+    values_to = "n"
+  ) %>%
+  mutate(word = fct_reorder(word, n, .fun = max))
+```
+
+create a visualization of the words using the same approach as week2 word-frequency visualization
+
+```{r}
+#ggplot visualization
+ggplot(word_plot_data, aes(x = n, y = word)) + 
+  geom_col() +
+  facet_wrap(~ doc_title, scales = "free_x") +
+  labs(
+    title = "Most frequent words (stopwords included)",
+    subtitle = paste0(
+      "Top ", plot_n_words,
+      " words by maximum frequency across both texts"
+    ),
+    x = "Word frequency",
+    y = NULL
+  ) +
+  theme_minimal()
+```
+
+### B
+
+count frequency of each word in each document *before* stopword removal
+
+```{r}
+word_nostops_counts <- word_nostops %>%
+  count(doc_title, word, sort = TRUE)
+
+word_nostops_counts
+```
+
+identify 15 most frequent words using the same procedure as the week2 tutorial (plot the same 15 words for both documents)
+
+```{r}
+# Order words by frequency
+word_nostops_comparison_tbl <- word_nostops_counts %>%
+  pivot_wider(
+    names_from = doc_title,
+    values_from = n,
+    values_fill = 0
+  ) %>%
+  mutate(max_n = pmax(`Text A`, `Text B`)) %>%
+  arrange(desc(max_n))
+
+# new table format to create ggplot
+word_nostops_plot_data <- word_nostops_comparison_tbl %>%
+  slice_head(n = plot_n_words) %>%
+  pivot_longer(
+    cols = c(`Text A`, `Text B`),
+    names_to = "doc_title",
+    values_to = "n"
+  ) %>%
+  mutate(word = fct_reorder(word, n, .fun = max))
+```
+
+create a visualization of the words using the same approach as week2 word-frequency visualization
+
+```{r}
+#ggplot visualization
+ggplot(word_nostops_plot_data, aes(x = n, y = word)) + 
+  geom_col() +
+  facet_wrap(~ doc_title, scales = "free_x") +
+  labs(
+    title = "Most frequent words (after stopword removal)",
+    subtitle = paste0(
+      "Top ", plot_n_words,
+      " words by maximum frequency across both texts"
+    ),
+    x = "Word frequency",
+    y = NULL
+  ) +
+  theme_minimal()
+```
+
+### Interpretive questions II
+
+The removal of stopwords highly impacts the 15 most frequent words. Pre-stopword removal, all words presented are considered stopwords for this text. Furthermore, there is no notable difference in the 15 most frequent words between the two texts; we are not able to elucidate any important differences regarding word usage or subject matter between the two texts. Post-stopword removal, we are able to identify words that provide meaningful suggestions as to the subject matter of the two texts. We notice that Text B seems to have a higher focus on the monetary aspects of trade than Text A does, because of the top 15 most common words, only 9 of them appear in Text B, and two of the ones that do appear are "money" and "mony" (which I am pretty sure are just two spellings of "money"). However, Text A appears to have a much higher emphasis on the interactions of trade, as indicated by the heavy use "exchange" and "ballance" (I assume "ballance" is an old way of spelling "balance").
+
+One aspect that becomes less visible is the use of pronouns. Since the stopwords list includes "his", that is removed from the list, so we cannot compare the usage of masculine and feminine pronouns.
+
+## Part 3
+
+Remove only the standard list of stopwords
+
+```{r}
+word_custom_stops <- words %>%
+  anti_join(stop_words, by = "word")
+
+wcs_a <- nrow(filter(word_custom_stops, doc_title == "Text A"))
+wcs_b <- nrow(filter(word_custom_stops, doc_title == "Text B"))
+
+wcs_counts <- word_custom_stops %>%
+  count(doc_title, word, sort = TRUE)
+
+wcs_counts #%>% print(n = 15)
+```
+
+Words included: haue, hath, vpon
+
+### Interpretive question
+
+Without the removal of custom words, we see "haue", "hath", and "vpon" in the list of the top 15 words. Neither "haue" (I think this is "have") nor "hath" has a major impact on the overall meaning of the text. Moreover, since this is not a fairy tale, we can assume "vpon" (I assume "upon") is also not likely. However, it may be likely if we were discussing the spatial arrangement of merchant vessels as "v/upon" would then inform the reader of the relative location of objects. Thus we see that the context of the corpus we are analyzing impacts the type of words that may or may not be important, resulting in the need for stopword removal lists to be tailored.
+
+## Final Reflection
+
+I would agree that stopword removal is data cleaning, however that does not mean it does not affect the interpretation of the data. Think back to the loss of the word "his" from the initial list to the final list. While "his" may not be terribly important to the meat of the text, the loss of this word leads to us being unable to even ask the question about how gender may have impacted the writing or how gender and trade are related. It must have been important enough, whether subconscious or not, to have made it into the most frequent word list.
