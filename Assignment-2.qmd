@@ -1,0 +1,352 @@
+---
+title: "IDS570_Homework-2"
+format: html
+editor: visual
+---
+
+### Background
+
+Previously, we used **sentiment dictionaries** to classify words as positive or negative within windows around trade-related terms, and then counted how often those words appeared in each text. This allowed us to compute a net sentiment score based on raw word counts.
+
+We then learned **TF-IDF (term frequency–inverse document frequency)**, which changes how words “count” by giving more weight to words that are distinctive to a document and less weight to words that are common across documents. In this assignment, you will combine two methods you have learned! The goal is to learn what happens to sentiment analysis when we weight words by TF-IDF instead of simply counting them equally (each approach will be useful in different contexts).
+
+## Goal
+
+Compute sentiment twice for the same texts:
+
+1.  Using raw word counts
+
+2.  Using TF-IDF–weighted words
+
+Interpret what changes, why it changes, and what that tells us about how computational methods shape evidence. In particular, focus on understanding what sentiment dictionaries can and cannot tell us about a corpus, and how TF-IDF reweights text data.
+
+- An Important Point: Use the same preprocessing decisions for the **entire assignment**. Create one cleaned set of tokens for all three documents (*Circle of Commerce*, *Free Trade*, and A06785), and use those tokens for both the raw-count (part I) and TF-IDF analyses (part 2). This ensures that the difference you observe is caused by TF-IDF weighting rather than different preprocessing choices
+
+## Task
+
+You will compute sentiment in **two ways** for the same two texts:
+
+1.  Using **raw word counts** (Week 03 method)
+
+2.  Using **TF-IDF–weighted words** (Week 04 method)
+
+You will then compare the results and interpret what changed. Like in homework one, we will do this step-by-step and then I will ask you to interpret your results.
+
+Use **exactly** the same two texts as in Weeks 02–04:
+
+- *Circle of Commerce* (Text A)
+- *Free Trade* (Text B)
+
+Use the same file paths and naming conventions introduced in the tutorials.
+
+```{r}
+#load packages ---------
+library(readr)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(tidytext)
+library(ggplot2)
+library(forcats)
+library(tibble)
+library(scales)
+```
+
+```{r}
+#Read raw txt into R
+circle_raw <- read_file("texts/A07594__Circle_of_Commerce.txt")
+trade_raw <- read_file("texts/B14801__Free_Trade.txt")
+
+#Combine into a tibble for tidytext workflow
+text_tbl <- tibble(
+  doc_title = c("The Circle of Commerce", "Free Trade"),
+  text = c(circle_raw, trade_raw)
+)
+
+#print tibble table
+text_tbl %>% select(doc_title)
+text_tbl
+```
+
+# I. Raw-Count Sentiment Analysis (Week 03 Method)
+
+**Note:** in Week 03 we did *targeted* sentiment analysis: we built ±30-word windows around the trade terms and scored sentiment only *inside* those windows. Here we are*deliberately simplifying* and scoring the *whole* document instead. I am doing this so that the raw-count and the TF-IDF results sit on the same footing (TF-IDF is a document-level weighting) and the comparison in Part III is clean. 
+
+**Step 1:** Tokenize and clean the text 
+
+Create a tidy table with: 
+
+- one row per word token 
+- lowercase words 
+- stopwords removed 
+- Normalize the “long s” (ſ) to s, as we did in Week 03 
+
+This step should look very similar to what you did in Weeks 02. 
+
+```{r}
+# one row per word token/lowercase words - generates a tibble called words with one word(token) per row
+words <- text_tbl %>%
+  unnest_tokens(word, text) 
+
+# stopwords removed - new tible with stopwords removed
+nostop <- words %>%
+  anti_join(stop_words, by = "word")
+
+# Normalize the “long s” (ſ) to s - new tible with modern s used
+clean_text <- nostop %>%
+  mutate(text_clean = str_replace_all(word, "ſ", "s"))
+clean_text
+
+```
+
+**Step 2: Join tokens to the Bing sentiment dictionary**
+
+Use the **Bing** sentiment lexicon to label words as positive or negative.
+
+```{r}
+clean_bing <- clean_text %>%
+  inner_join(get_sentiments("bing"))
+```
+
+**Step 3: Compute raw sentiment totals**
+
+Create a summary table with **one row per document** that includes:
+
+- number of positive words
+- number of negative words
+- net sentiment (positive − negative)
+
+```{r}
+# col1: title | col2: npos | col3: nneg | col4: pos-neg
+bing_sentiment <- clean_bing %>%
+  group_by(doc_title) %>%
+  summarise(n_pos = sum(sentiment == "positive"),
+            n_neg = sum(sentiment == "negative")) %>%
+  mutate(net_sentiment = n_pos - n_neg)
+bing_sentiment
+```
+
+# II. TF-IDF–Weighted Sentiment Analysis (see Week 04)
+
+Two things before you start:
+
+- First, IDF is only meaningful *relative to a corpus*. With only two texts, a word is either in one document or in both, so IDF collapses to essentially two values and the weighting tells you very little. So compute TF-IDF over the **same three texts as in Week 04**—*Circle of Commerce*, *Free Trade*, and the “mystery” third text A06785 (Malynes)—and *then* keep only Texts A and B for the sentiment comparison. The third text is there to give IDF more information to work with, **but** three documents are obviously still a very small corpus and you don’t want to take the results too seriously!
+- Second, an **interpretive issue**: A TF-IDF-weighted sentiment score should **not** be interpreted simply as “how positive” or “how negative” a document is. It tells us how much TF-IDF weight is carried by words that the Bing dictionary labels positive or negative.
+
+**Step 4: Compute TF-IDF for words in each document**
+
+**Important:** Use the **same** preprocessing decisions for both analyses. The R objects will be different because Part I uses tidy data and Part II uses a quanteda DFM (to match the tutorials), but the underlying text-cleaning decisions should be the same.
+
+Then compute TF-IDF weights using dfm_tfidf(), as we did in Week 04
+
+## Preprocessing work
+
+```{r}
+# Rerunning the preprocessing with malynes_raw added.
+# I know I could have just added on the Malynes information to the previously cleaned tibble, but that would require just a little more effort on my part instead of just copy/paste so I redid everything.
+malynes_raw <- read_file("texts/A06785.txt")
+
+text_tbl_2 <- tibble(
+  doc_title = c("The Circle of Commerce", "Free Trade", "Malynes"),
+  text = c(circle_raw, trade_raw, malynes_raw)
+)
+
+# one row per word token/lowercase words - generates a tibble called words with one word(token) per row
+words_2 <- text_tbl_2 %>%
+  unnest_tokens(word, text) 
+
+# stopwords removed - new tible with stopwords removed
+nostop_2 <- words_2 %>%
+  anti_join(stop_words, by = "word")
+
+# Normalize the “long s” (ſ) to s - new tible with modern s used
+clean_text_2 <- nostop_2 %>%
+  mutate(text_field = str_replace_all(word, "ſ", "s"))
+clean_text_2
+```
+
+## TF-IDF calculation
+
+Importing quanteda
+
+```{r}
+library(quanteda)
+library(quanteda.textstats)
+```
+
+Building the document-feature matrix
+
+```{r}
+clean_docs <- clean_text_2 %>%
+  group_by(doc_title) %>%
+  summarise(text = paste(text_field, collapse = " "))
+
+corp <- corpus(clean_docs, text_field = "text", docid_field = "doc_title")
+
+toks <- tokens(corp)
+
+dfm_mat <- dfm(toks)
+
+dfm_mat
+```
+
+Calculate TF-IDF for the dfm
+
+```{r}
+dfm_tfidf <- dfm_tfidf(dfm_mat)
+
+dfm_tfidf
+```
+
+## Step 5: Convert the TF-IDF results to a tidy table
+
+The result of dfm_tfidf() is still a quanteda document-feature matrix. To join the words to the Bing dictionary, we need to turn that matrix back into a regular data frame and then into a tidy format with **one document-word combination per row**.
+
+Your resulting table should contain at least:
+
+- the document name
+- the word
+- its TF-IDF weight
+
+Remove rows where the TF-IDF weight is 0.
+
+```{r}
+tfidf_tbl_wide <- convert(dfm_tfidf, to = "data.frame") 
+
+tfidf_tbl <- tfidf_tbl_wide %>%
+  pivot_longer(cols = -doc_id, names_to = "word", values_to = "tfidf_weight")
+
+tfidf_tbl_small <- tfidf_tbl %>%
+  filter(tfidf_weight > 0, doc_id != "Malynes")
+
+
+tfidf_tbl_small
+```
+
+## Step 6: Keep only sentiment-bearing words
+
+Join your tidy TF-IDF table to the Bing sentiment dictionary.
+
+```{r}
+tfidf_bing <- tfidf_tbl_small %>%
+  inner_join(get_sentiments("bing")) %>%
+  arrange(desc(tfidf_weight))
+tfidf_bing
+```
+
+Once this is done, inspect the sentiment-bearing words with the highest TF-IDF weights in each document. You will need these results to answer Question 3 in Part IV.
+
+## Step 7: Compute TF-IDF–weighted sentiment totals
+
+Create a summary table with one row per document containing:
+
+- total TF-IDF weight of positive words
+- total TF-IDF weight of negative words
+- net TF-IDF sentiment
+
+Calculate:
+
+**net TF-IDF sentiment = positive TF-IDF weight − negative TF-IDF weight**
+
+```{r}
+# col1: title | col2: npos | col3: nneg | col4: pos-neg
+tfidf_sentiment <- tfidf_bing %>%
+  group_by(doc_id) %>%
+  summarise(tfidf_pos = sum(sentiment == "positive"),
+            tfidf_neg = sum(sentiment == "negative")) %>%
+  mutate(net_tfidf_sentiment = tfidf_pos - tfidf_neg)
+tfidf_sentiment
+```
+
+# III. Compare Raw vs. TF-IDF Sentiment (Last step)
+
+Create a final table that includes:
+
+- raw sentiment results
+- TF-IDF–weighted sentiment results
+
+Export this table as a .csv. (To be posted on Canvas.)
+
+```{r}
+all_sentiment <- left_join(bing_sentiment, tfidf_sentiment, by = c("doc_title" = "doc_id"))
+
+all_sentiment
+```
+
+# IV. Answer these questions (short prose to be shared on Canvas):
+
+> 1. What changed between the two methods?
+
+The most obvious change is that the net sentiment from the TF-IDF analysis is negative for both, while it was positive for both with just number counts.
+
+> 2. Why did TF-IDF alter the results?
+
+TF-IDF changed the results because it reduced the importance of words that were common in both documents (ex. benefit and decay) and emphasized the importance of words that were more unique to one document or another.
+
+> 3. Which specific words drove the changes?
+
+For the raw sentiment analysis, the top 5 most influential words were  
+
+- "Free Trade" pos[remedy, treasure, liberty, benefit] and neg[decay]
+- "Circle"     pos[free,   worthy,   noble,   benefit] and neg[decay]
+
+For the TF-IDF sentiment analysis, the top 10 most influential words were
+
+- "Free Trade" pos[                                ] and neg[imposition, disorderly, pleas, deficient, loose]
+- "Circle"     pos[best, passion, divine, affection] and neg[impertinent                                    ]
+
+While "imposition" is in the top 20 words for "Free Trade", so it is common enough to have an impact, it's TF-IDF leads to it having the most impact on "Free Trade"'s TF-IDF net semantic score.
+
+> 4. When would each method be more appropriate? What limitation does document length create for the raw-count sentiment measure?
+
+When you are just looking at an individual document, raw sentiment analysis is perfectly fine.
+
+If you are trying to compare multiple documents, then it gets a little more complicated.
+
+When the documents have fairly similar lengths (word/token count), then I believe that the raw sentiment analysis is sufficient. However, when the lengths are different, then the difference in length has a greater impact on the raw sentiment analysis. Using TF-IDF accounts for the document length, and that normalization allows for comparision in sentiment across documents of varying lengths. 
+
+# Me messing around with graphs
+I want graphs that show the top 20 words in part 1 (I.Raw-Count Sentiment Analysis (Week 03 Method)) that have an influence on the pos/neg count for each document **and** the top 20 words for each document in tfidf_bing.
+```{r}
+#| fig-width: 12
+#| fig-height: 7
+
+# Graph 1: top 20 sentiment words by raw count (from clean_bing)
+top_raw <- clean_bing %>%
+  count(doc_title, word, sentiment) %>%
+  group_by(doc_title) %>%
+  slice_max(n, n = 20, with_ties = FALSE) %>%
+  ungroup()
+
+ggplot(top_raw,
+       aes(x = n,
+           y = reorder_within(word, n, doc_title),
+           fill = sentiment)) +
+  geom_col() +
+  scale_y_reordered() +
+  scale_fill_manual(values = c(negative = "#c0392b", positive = "#2e86c1")) +
+  facet_wrap(~ doc_title, scales = "free_y") +
+  labs(title = "Top 20 sentiment words by raw count",
+       x = "Raw count", y = NULL, fill = NULL)
+
+#| fig-width: 12
+#| fig-height: 7
+
+# Graph 2: top 20 sentiment words by TF-IDF weight (from tfidf_bing)
+top_tfidf <- tfidf_bing %>%
+  group_by(doc_id) %>%
+  slice_max(tfidf_weight, n = 20, with_ties = FALSE) %>%
+  ungroup()
+
+ggplot(top_tfidf,
+       aes(x = tfidf_weight,
+           y = reorder_within(word, tfidf_weight, doc_id),
+           fill = sentiment)) +
+  geom_col() +
+  scale_y_reordered() +
+  scale_fill_manual(values = c(negative = "#c0392b", positive = "#2e86c1")) +
+  facet_wrap(~ doc_id, scales = "free_y") +
+  labs(title = "Top 20 sentiment words by TF-IDF weight",
+       x = "TF-IDF weight", y = NULL, fill = NULL)
+```
+
